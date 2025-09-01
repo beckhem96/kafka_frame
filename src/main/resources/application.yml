@@ -2,7 +2,7 @@ spring:
   application:
     name: kafka
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:29092
     consumer:
       group-id: group_id
       auto-offset-reset: earliest
@@ -14,7 +14,12 @@ spring:
 
 app:
   kafka:
-    topic: chat-message
+    topic: app-logs
+
+logging:
+  level:
+    root: INFO
+    com.example.demo: DEBUG
 
 server:
   port: 8380

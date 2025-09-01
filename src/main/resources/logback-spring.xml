@@ -1,0 +1,26 @@
+<configuration>
+    <springProperty scope="context" name="KAFKA_BOOTSTRAP" source="spring.kafka.bootstrap-servers" defaultValue="localhost:9092"/>
+    <springProperty scope="context" name="KAFKA_TOPIC"     source="app.kafka.topic"     defaultValue="app-logs"/>
+
+    <!-- JSON 인코더 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+
+    <!-- Kafka Appender (JSON 메시지를 Kafka 토픽으로 전송) -->
+    <appender name="KAFKA" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <topic>${KAFKA_TOPIC}</topic>
+        <producerConfig>bootstrap.servers=${KAFKA_BOOTSTRAP}</producerConfig>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        <!-- 필요 시 안정성 옵션 예:
+        <producerConfig>acks=all</producerConfig>
+        <producerConfig>linger.ms=50</producerConfig>
+        <producerConfig>batch.size=32768</producerConfig>
+        -->
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="KAFKA"/>
+    </root>
+</configuration>
