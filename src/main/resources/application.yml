@@ -3,18 +3,37 @@ spring:
     name: kafka
   kafka:
     bootstrap-servers: localhost:9092
-    consumer:
-      group-id: group_id
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 app:
   kafka:
-    topic: chat-message
+    bootstrap-servers: ${spring.kafka.bootstrap-servers}
+    topics:
+      chat:
+        name: chat-topic
+        partitions: 3
+        replication-factor: 1
+        configs:
+          retention.ms: 86400000  # 1일
+          cleanup.policy: delete
+      notification:
+        name: notification-topic
+        partitions: 2
+        replication-factor: 1
+    consumer:
+      group-id: chat-consumer-group
+      auto-offset-reset: earliest
+      max-poll-records: 100
+      enable-auto-commit: false  # 수동 커밋
+    producer:
+      acks: all
+      retries: 3
+      batch-size: 16384
+      linger-ms: 10
+      compression-type: snappy
 
-server:
-  port: 8380
+logging:
+  level:
+    org.apache.kafka: INFO
+    com.example: DEBUG
+#server:
+#  port: 8380
