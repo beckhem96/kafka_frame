@@ -6,6 +6,7 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -109,11 +110,11 @@ public class KafkaConfig {
 
         // 2. Key 직렬화 방식 (String -> byte[])
         // Key는 메시지를 어는 파티션으로 보낼지 결정하는 사용
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringBuilder.class);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
         // 3. Value 직렬화 방식 (String -> byte[])
         // 실제 메시지 내용
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringBuilder.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
         // ===== Properties에서 가져온 설정 =====
 
