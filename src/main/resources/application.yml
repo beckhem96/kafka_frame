@@ -1,6 +1,6 @@
 spring:
   application:
-    name: kafka
+    name: kafka-chat-app
   kafka:
     bootstrap-servers: localhost:9092
 
