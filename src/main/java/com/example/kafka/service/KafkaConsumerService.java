@@ -1,5 +1,10 @@
 package com.example.kafka.service;
 
+import com.example.kafka.entity.ChatMessage;
+import com.example.kafka.entity.ChatMessageByUser;
+import com.example.kafka.repository.ChatMessageByUserRepository;
+import com.example.kafka.repository.ChatMessageRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -34,8 +39,26 @@ import java.time.ZoneId;
  * - Consumer가 어디까지 읽었는지 기록
  * - 재시작 시 이 위치부터 다시 읽음
  */
+
+/**
+ * Kafka Consumer 서비스 (Cassandra 저장 기능 추가)
+ *
+ * 변경 사항:
+ * 1. Repository 주입 추가
+ * 2. 메시지 수신 시 Cassandra에 저장
+ *
+ * 동작 흐름:
+ * Kafka에서 메시지 수신
+ *       ↓
+ * Cassandra에 저장 (2개 테이블)
+ *   1. chat_messages (메시지 ID로 조회)
+ *   2. chat_messages_by_user (사용자별 조회)
+ *       ↓
+ * 처리 완료 후 오프셋 커밋
+ */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class KafkaConsumerService {
 
     /**
@@ -283,5 +306,94 @@ public class KafkaConsumerService {
         log.info("Processing notification: {}", message);
         // 알림 관련 처리
         // 예: Push 알림 전송, 이메일 발송 등
+    }
+
+    // ===== Cassandra Repository 추가 =====
+    private final ChatMessageRepository chatMessageRepository;
+    private final ChatMessageByUserRepository chatMessageByUserRepository;
+
+    /**
+     * Kafka 메시지 수신 및 Cassandra 저장
+     *
+     * 동작:
+     * 1. Kafka에서 메시지 수신
+     * 2. Cassandra에 저장 (2개 테이블에 동시 저장)
+     * 3. 오프셋 커밋
+     *
+     * 2개 테이블에 저장하는 이유:
+     * - Cassandra는 조인 불가
+     * - 쿼리 패턴마다 별도 테이블 필요
+     * - 데이터 중복은 허용 (비정규화)
+     *
+     * 쓰기 성능:
+     * - Cassandra의 쓰기는 매우 빠름 (초당 수만 건 가능)
+     * - 2개 테이블에 저장해도 부담 없음
+     * - 비동기 쓰기로 추가 최적화 가능
+     */
+    @KafkaListener(
+            topics = "chat-topic",
+            groupId = "chat-consumer-group",
+            containerFactory = "kafkaListenerContainerFactory"
+    )
+    public void consumeAndSaveToCassandra(
+            @Payload String message,
+            @Header(KafkaHeaders.RECEIVED_KEY) String userName,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            Acknowledgment acknowledgment) {
+
+        log.info("📩 Message received from Kafka:");
+        log.info("   - User: {}", userName);
+        log.info("   - Message: {}", message);
+        log.info("   - Partition: {}", partition);
+        log.info("   - Offset: {}", offset);
+
+        try {
+            // ===== 1. chat_messages 테이블에 저장 =====
+            // 메시지 ID로 조회하는 용도
+            ChatMessage chatMessage = ChatMessage.from(
+                    userName,
+                    message,
+                    partition,
+                    offset
+            );
+            chatMessageRepository.save(chatMessage);
+
+            log.info("💾 Saved to chat_messages: messageId={}",
+                    chatMessage.getMessageId());
+
+            // ===== 2. chat_messages_by_user 테이블에 저장 =====
+            // 사용자별로 조회하는 용도
+            ChatMessageByUser messageByUser = ChatMessageByUser.from(
+                    userName,
+                    message,
+                    partition,
+                    offset
+            );
+            chatMessageByUserRepository.save(messageByUser);
+
+            log.info("💾 Saved to chat_messages_by_user: user={}, messageId={}",
+                    userName, messageByUser.getMessageId());
+
+            // ===== 3. 오프셋 커밋 =====
+            // Cassandra 저장이 성공한 경우에만 커밋
+            // 실패 시 커밋하지 않아 재처리 가능
+            if (acknowledgment != null) {
+                acknowledgment.acknowledge();
+                log.info("✅ Message processed and committed: offset={}", offset);
+            }
+
+        } catch (Exception e) {
+            // ===== 에러 처리 =====
+            log.error("❌ Failed to save message to Cassandra: {}",
+                    e.getMessage(), e);
+
+            // 옵션 1: 커밋하지 않음 (재시작 시 재처리)
+            // 옵션 2: DLQ(Dead Letter Queue)로 전송
+            // 옵션 3: 재시도 로직
+
+            // 현재: 커밋하지 않음 (재처리)
+            // acknowledgment.acknowledge()를 호출하지 않음
+        }
     }
 }

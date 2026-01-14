@@ -3,7 +3,6 @@ package com.example.kafka.controller;
 import com.example.kafka.dto.ChatRequest;
 import com.example.kafka.service.KafkaProducerService;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;

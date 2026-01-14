@@ -1,6 +1,6 @@
 spring:
   application:
-    name: kafka-chat-app
+    name: kafka-cassandra-chat-app
   kafka:
     bootstrap-servers: localhost:9092
   # ===== Cassandra 설정 (추가!) =====
@@ -57,6 +57,5 @@ app:
 logging:
   level:
     org.apache.kafka: INFO
+    com.datastax.oss.driver: INFO  # Cassandra 드라이버 로그
     com.example: DEBUG
-#server:
-#  port: 8380
