@@ -3,7 +3,30 @@ spring:
     name: kafka-chat-app
   kafka:
     bootstrap-servers: localhost:9092
+  # ===== Cassandra 설정 (추가!) =====
+  cassandra:
+    # Cassandra 서버 주소
+    contact-points: localhost
+    # Cassandra 포트 (기본 9042)
+    port: 9042
+    # Keyspace 이름 (RDB의 Database와 유사)
+    keyspace-name: chat_keyspace
+    # 로컬 데이터센터 이름
+    local-datacenter: datacenter1
 
+    # 인증 정보 (필요 시)
+    # username: cassandra
+    # password: cassandra
+
+    # 연결 설정
+    connection:
+      connect-timeout: 5000ms
+      init-query-timeout: 5000ms
+
+    # 요청 설정
+    request:
+      timeout: 2000ms
+      consistency: LOCAL_QUORUM  # 일관성 레벨
 app:
   kafka:
     bootstrap-servers: ${spring.kafka.bootstrap-servers}
