@@ -1,26 +1,85 @@
 <configuration>
-    <springProperty scope="context" name="KAFKA_BOOTSTRAP" source="spring.kafka.bootstrap-servers" defaultValue="localhost:9092"/>
-    <springProperty scope="context" name="KAFKA_TOPIC"     source="app.kafka.topic"     defaultValue="app-logs"/>
-
-    <!-- JSON 인코더 -->
+    <!-- ===== 콘솔 Appender (로컬 개발용) ===== -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
     </appender>
 
-    <!-- Kafka Appender (JSON 메시지를 Kafka 토픽으로 전송) -->
-    <appender name="KAFKA" class="com.github.danielwegener.logback.kafka.KafkaAppender">
-        <topic>${KAFKA_TOPIC}</topic>
-        <producerConfig>bootstrap.servers=${KAFKA_BOOTSTRAP}</producerConfig>
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
-        <!-- 필요 시 안정성 옵션 예:
-        <producerConfig>acks=all</producerConfig>
-        <producerConfig>linger.ms=50</producerConfig>
-        <producerConfig>batch.size=32768</producerConfig>
-        -->
+    <!-- ===== Kafka Appender (애플리케이션 로그) ===== -->
+    <!--
+        동작:
+        1. Spring Boot 애플리케이션의 로그가 발생
+        2. Logback이 로그를 캡처
+        3. Kafka의 "app-logs" 토픽으로 전송
+        4. Logstash가 Kafka에서 읽어서 Elasticsearch로 전송
+        5. Kibana에서 시각화
+    -->
+    <appender name="KAFKA_APPENDER" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <!-- Kafka 브로커 주소 -->
+        <producerConfig>bootstrap.servers=localhost:29092</producerConfig>
+
+        <!-- 토픽 이름 -->
+        <topic>app-logs</topic>
+
+        <!-- JSON 형식으로 인코딩 -->
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- 추가 필드 -->
+            <customFields>
+                {
+                "application": "kafka-elk-demo",
+                "environment": "development"
+                }
+            </customFields>
+        </encoder>
+
+        <!-- 성능 설정 -->
+        <producerConfig>compression.type=snappy</producerConfig>
+        <producerConfig>max.block.ms=1000</producerConfig>
+
+        <!-- 비동기 전송 (성능 향상) -->
+        <appendTimestamp>true</appendTimestamp>
     </appender>
 
+    <!-- ===== 에러 로그만 별도 토픽으로 ===== -->
+    <!--
+        ERROR 레벨 로그만 "error-logs" 토픽으로 전송
+        중요한 에러를 빠르게 모니터링하기 위함
+    -->
+    <appender name="KAFKA_ERROR_APPENDER" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <producerConfig>bootstrap.servers=localhost:29092</producerConfig>
+        <topic>error-logs</topic>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>
+                {
+                "application": "kafka-elk-demo",
+                "environment": "development",
+                "severity": "ERROR"
+                }
+            </customFields>
+        </encoder>
+
+        <!-- ERROR 레벨만 필터링 -->
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>ERROR</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+    </appender>
+
+    <!-- ===== Root Logger 설정 ===== -->
     <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="KAFKA"/>
+        <!-- 콘솔 출력 (개발 시 확인용) -->
+        <appender-ref ref="CONSOLE" />
+
+        <!-- Kafka로 전송 (ELK 스택으로) -->
+        <appender-ref ref="KAFKA_APPENDER" />
+        <appender-ref ref="KAFKA_ERROR_APPENDER" />
     </root>
+
+    <!-- ===== 패키지별 로그 레벨 ===== -->
+    <logger name="com.example.kafka" level="DEBUG" />
+    <logger name="org.springframework.kafka" level="WARN" />
+    <logger name="org.apache.kafka" level="WARN" />
 </configuration>

@@ -1,0 +1,13 @@
+# Logstash 기본 설정
+
+# HTTP API 호스트
+http.host: "0.0.0.0"
+
+# HTTP API 포트
+http.port: 9600
+
+# 모니터링 설정
+xpack.monitoring.enabled: false
+
+# 로그 레벨
+log.level: info
