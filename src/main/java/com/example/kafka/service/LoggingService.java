@@ -23,6 +23,10 @@ import java.util.Map;
  * 2. Kafka로 로그 전송 (logback-kafka-appender 사용)
  * 3. 직접 Kafka Producer로 전송 (선택사항)
  *
+ * 두 가지 방식:
+ * 1. 자동 로깅: log.info() → Logback Appender → Kafka
+ * 2. 수동 전송: KafkaProducerService → Kafka
+ *
  * 구조화된 로깅이란?
  * - 로그를 단순 문자열이 아닌 JSON 형태로 저장
  * - Elasticsearch에서 필드별 검색 가능
@@ -36,16 +40,19 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class LoggingService {
-    // KafkaTemplate: 메시지를 Kafka로 전송하는 API
-    // Spring Boot가 자동으로 생성해서 주입해줌
-    private final KafkaTemplate<String, String> kafkaTemplate;
+//    // KafkaTemplate: 메시지를 Kafka로 전송하는 API
+//    // Spring Boot가 자동으로 생성해서 주입해줌
+//    private final KafkaTemplate<String, String> kafkaTemplate;
+//
+//    // ObjectMapper: Java 객체 ↔ JSON 변환
+//    private final ObjectMapper objectMapper;
 
-    // ObjectMapper: Java 객체 ↔ JSON 변환
-    private final ObjectMapper objectMapper;
+    // ✅ KafkaProducerService 주입 (이전에는 KafkaTemplate 직접 주입)
+    private final KafkaProducerService kafkaProducerService;
 
     // application.yml에서 주입
-    @Value("${spring.application.name}")
-    private String applicationName;
+//    @Value("${spring.application.name}")
+//    private String applicationName;
 
     /**
      * 방법 1: Logback을 통한 구조화된 로깅 (권장!)
@@ -78,55 +85,30 @@ public class LoggingService {
     }
 
     /**
-     * 방법 2: 직접 Kafka Producer로 전송
+     * 방법 2: 직접 Kafka 전송 (수동)
      *
-     * 동작:
-     * 1. LogEvent 객체 생성
-     * 2. ObjectMapper로 JSON 문자열 변환
-     * 3. KafkaTemplate.send()로 직접 Kafka 전송
+     * 흐름:
+     * LogEvent → KafkaProducerService → Kafka → Logstash → Elasticsearch
      *
      * 장점:
      * - 토픽을 동적으로 선택 가능
-     * - 로그 레벨과 무관하게 전송 가능
-     * - 더 세밀한 제어 가능
-     *
-     * 단점:
-     * - 코드가 약간 복잡
-     * - 에러 처리 필요
+     * - 로그 레벨과 무관하게 전송
+     * - 더 세밀한 제어
      *
      * 사용 케이스:
      * - 비즈니스 이벤트 (주문, 결제 등)
-     * - 특정 토픽으로 전송 필요 시
-     * - 로그와 별개로 이벤트 발행
+     * - 특정 토픽으로 전송 필요
+     * - 로그와 별개의 이벤트 발행
+     *
+     * ✅ 이제 KafkaProducerService 사용!
      */
     public void sendToKafka(String topic, LogEvent event) {
-        try {
-            // LogEvent 객체를 JSON 문자열로 변환
-            String jsonMessage = objectMapper.writeValueAsString(event);
-
-            // Kafka로 전송
-            // topic: 대상 토픽
-            // event.getUserId().toString(): 메시지 Key (파티셔닝 기준)
-            // jsonMessage: 메시지 Value (실제 내용)
-            kafkaTemplate.send(topic, event.getUserId().toString(), jsonMessage)
-                    .whenComplete((result, ex) -> {
-                        if (ex == null) {
-                            // 전송 성공
-                            log.debug("✅ Event sent to Kafka: topic={}, partition={}, offset={}",
-                                    topic,
-                                    result.getRecordMetadata().partition(),
-                                    result.getRecordMetadata().offset());
-                        } else {
-                            // 전송 실패
-                            log.error("❌ Failed to send event to Kafka: topic={}, error={}",
-                                    topic, ex.getMessage(), ex);
-                        }
-                    });
-
-        } catch (JsonProcessingException e) {
-            // JSON 변환 실패
-            log.error("Failed to serialize LogEvent: {}", e.getMessage(), e);
-        }
+        // ✅ Producer Service로 위임
+        kafkaProducerService.sendObject(
+                topic,
+                event.getUserId().toString(),
+                event
+        );
     }
 
     /**

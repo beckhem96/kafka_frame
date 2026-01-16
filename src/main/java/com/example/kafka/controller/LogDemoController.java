@@ -2,6 +2,7 @@ package com.example.kafka.controller;
 
 import com.example.kafka.config.KafkaProperties;
 import com.example.kafka.dto.LogEvent;
+import com.example.kafka.service.KafkaProducerService;
 import com.example.kafka.service.LoggingService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ import java.util.Map;
 public class LogDemoController {
 
     private final LoggingService loggingService;
+    private final KafkaProducerService kafkaProducerService;  // ✅ 추가!
     private final KafkaProperties kafkaProperties;
 
     @Value("${spring.application.name}")
@@ -256,6 +258,27 @@ public class LogDemoController {
         }
 
         return ResponseEntity.ok(count + " logs generated!");
+    }
+
+    /**
+     * Kafka Producer Service를 직접 사용하는 예제
+     *
+     * POST /api/demo/direct-kafka
+     * {
+     *   "orderId": 123,
+     *   "amount": 10000
+     * }
+     */
+    @PostMapping("/direct-kafka")
+    public ResponseEntity<String> directKafka(@RequestBody Map<String, Object> data) {
+
+        String topic = kafkaProperties.getTopics().get("business-events").getName();
+        String key = data.get("orderId").toString();
+
+        // ✅ Producer Service 직접 사용
+        kafkaProducerService.sendObject(topic, key, data);
+
+        return ResponseEntity.ok("Event sent via Producer Service!");
     }
 
     /**
