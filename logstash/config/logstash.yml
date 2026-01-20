@@ -1,13 +1,8 @@
-# Logstash 기본 설정
-
-# HTTP API 호스트
+# Logstash 설정
 http.host: "0.0.0.0"
-
-# HTTP API 포트
-http.port: 9600
-
-# 모니터링 설정
 xpack.monitoring.enabled: false
 
-# 로그 레벨
-log.level: info
+# 파이프라인 설정
+pipeline.workers: 4  # 처리 워커 수
+pipeline.batch.size: 125
+pipeline.batch.delay: 50

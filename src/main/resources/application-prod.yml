@@ -1,0 +1,38 @@
+# ===== 프로덕션 환경 설정 =====
+
+# ===== Kafka 설정 (Logback용) =====
+kafka:
+  bootstrap-servers: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+  service-name: ${spring.application.name}
+  environment: production
+
+# ===== Spring Kafka 설정 =====
+spring:
+  kafka:
+    bootstrap-servers: kafka-broker-1:9092,kafka-broker-2:9092,kafka-broker-3:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all  # ✅ 모든 복제본 확인 (데이터 안정성)
+      retries: 10
+      compression-type: lz4
+      max-in-flight-requests-per-connection: 1  # 순서 보장
+      enable-idempotence: true  # 중복 방지
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      group-id: ${spring.application.name}-prod
+      auto-offset-reset: latest
+      enable-auto-commit: false  # 수동 커밋
+
+# ===== 서비스 정보 =====
+service:
+  version: 1.0.0
+  region: ap-northeast-2
+
+# ===== 로그 레벨 =====
+logging:
+  level:
+    com.example.kafka: INFO
+    org.springframework.kafka: ERROR
+    org.apache.kafka: ERROR

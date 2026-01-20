@@ -30,6 +30,8 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # ✅ 토픽별 보존 기간 설정
+      KAFKA_LOG_RETENTION_HOURS: 168  # 7일
     networks:
       - elk-network
     healthcheck:
@@ -37,8 +39,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-
-
 
   # ===== Elasticsearch =====
   # 로그를 저장하고 검색하는 엔진
@@ -52,6 +52,7 @@ services:
       - xpack.security.enabled=false
       # JVM 힙 메모리 설정
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=kafka-elk-cluster
     ports:
       - "9200:9200"  # HTTP API
       - "9300:9300"  # 노드 간 통신

@@ -1,0 +1,34 @@
+# ===== 개발 환경 설정 =====
+
+# ===== Kafka 설정 (Logback용) =====
+kafka:
+  bootstrap-servers: localhost:29092  # ✅ 호스트에서 접속
+  service-name: ${spring.application.name}
+  environment: development
+
+# ===== Spring Kafka 설정 (코드용) =====
+spring:
+  kafka:
+    bootstrap-servers: localhost:29092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: 1
+      retries: 3
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      group-id: ${spring.application.name}-dev
+      auto-offset-reset: earliest
+
+# ===== 서비스 정보 =====
+service:
+  version: 1.0.0-dev
+  region: local
+
+# ===== 로그 레벨 =====
+logging:
+  level:
+    com.example.kafka: DEBUG
+    org.springframework.kafka: WARN
+    org.apache.kafka: WARN

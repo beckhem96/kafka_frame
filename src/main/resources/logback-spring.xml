@@ -1,85 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- ===== 콘솔 Appender (로컬 개발용) ===== -->
+
+    <!-- ===== application.yml에서 값 가져오기 ===== -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="unknown-app"/>
+    <springProperty scope="context" name="SERVICE_NAME" source="kafka.service-name" defaultValue="${APP_NAME}"/>
+    <springProperty scope="context" name="ENVIRONMENT" source="kafka.environment" defaultValue="development"/>
+    <springProperty scope="context" name="KAFKA_SERVERS" source="kafka.bootstrap-servers" defaultValue="localhost:29092"/>
+    <springProperty scope="context" name="SERVICE_VERSION" source="service.version" defaultValue="1.0.0"/>
+    <springProperty scope="context" name="SERVICE_REGION" source="service.region" defaultValue="unknown"/>
+
+    <!-- ===== 기본 변수 ===== -->
+    <property name="LOG_PATTERN"
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n" />
+
+    <!-- ===== 콘솔 Appender (개발 확인용) ===== -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
         </encoder>
     </appender>
 
-    <!-- ===== Kafka Appender (애플리케이션 로그) ===== -->
-    <!--
-        동작:
-        1. Spring Boot 애플리케이션의 로그가 발생
-        2. Logback이 로그를 캡처
-        3. Kafka의 "app-logs" 토픽으로 전송
-        4. Logstash가 Kafka에서 읽어서 Elasticsearch로 전송
-        5. Kibana에서 시각화
-    -->
-    <appender name="KAFKA_APPENDER" class="com.github.danielwegener.logback.kafka.KafkaAppender">
-        <!-- Kafka 브로커 주소 -->
-        <producerConfig>bootstrap.servers=localhost:29092</producerConfig>
+    <!-- ===================================================================
+         Kafka Appenders (마커 기반 자동 라우팅)
+         각 Appender는 특정 마커를 가진 로그만 처리
+         ================================================================ -->
 
-        <!-- 토픽 이름 -->
-        <topic>app-logs</topic>
+    <!-- ===== 1. 일반 애플리케이션 로그 ===== -->
+    <appender name="KAFKA_APP_LOGS_SYNC" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <!-- Kafka 서버 설정 -->
+        <producerConfig>bootstrap.servers=${KAFKA_SERVERS}</producerConfig>
+        <producerConfig>acks=1</producerConfig>
+        <producerConfig>compression.type=snappy</producerConfig>
+        <producerConfig>max.block.ms=2000</producerConfig>
+
+        <!-- ✅ 토픽: app-logs-{서비스명} -->
+        <topic>app-logs-${SERVICE_NAME}</topic>
 
         <!-- JSON 형식으로 인코딩 -->
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <!-- 추가 필드 -->
             <customFields>
                 {
-                "application": "kafka-elk-demo",
-                "environment": "development"
+                "application": "${APP_NAME}",
+                "service": "${SERVICE_NAME}",
+                "environment": "${ENVIRONMENT}",
+                "version": "${SERVICE_VERSION}",
+                "region": "${SERVICE_REGION}"
                 }
             </customFields>
+            <!-- MDC 값 포함 (traceId, userId 등) -->
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <includeMdcKeyName>spanId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
         </encoder>
 
-        <!-- 성능 설정 -->
-        <producerConfig>compression.type=snappy</producerConfig>
-        <producerConfig>max.block.ms=1000</producerConfig>
-
-        <!-- 비동기 전송 (성능 향상) -->
-        <appendTimestamp>true</appendTimestamp>
+        <!-- ✅ ERROR 레벨 제외 (error-logs로 보냄) -->
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>ERROR</level>
+            <onMatch>DENY</onMatch>
+            <onMismatch>ACCEPT</onMismatch>
+        </filter>
     </appender>
 
-    <!-- ===== 에러 로그만 별도 토픽으로 ===== -->
-    <!--
-        ERROR 레벨 로그만 "error-logs" 토픽으로 전송
-        중요한 에러를 빠르게 모니터링하기 위함
-    -->
-    <appender name="KAFKA_ERROR_APPENDER" class="com.github.danielwegener.logback.kafka.KafkaAppender">
-        <producerConfig>bootstrap.servers=localhost:29092</producerConfig>
-        <topic>error-logs</topic>
+    <!-- ===== 2. 에러 로그 ===== -->
+    <appender name="KAFKA_ERROR_LOGS_SYNC" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <producerConfig>bootstrap.servers=${KAFKA_SERVERS}</producerConfig>
+        <producerConfig>acks=all</producerConfig>  <!-- ✅ 에러는 안전하게 -->
+        <producerConfig>compression.type=snappy</producerConfig>
+
+        <!-- ✅ 토픽: error-logs-{서비스명} -->
+        <topic>error-logs-${SERVICE_NAME}</topic>
 
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <customFields>
                 {
-                "application": "kafka-elk-demo",
-                "environment": "development",
-                "severity": "ERROR"
+                "application": "${APP_NAME}",
+                "service": "${SERVICE_NAME}",
+                "environment": "${ENVIRONMENT}",
+                "severity": "high"
+                }
+            </customFields>
+            <!-- 스택 트레이스 최적화 -->
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                <maxLength>2048</maxLength>
+            </throwableConverter>
+        </encoder>
+
+        <!-- ✅ ERROR만 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+    </appender>
+
+    <!-- ===== 3. 접근 로그 (HTTP 요청) ===== -->
+    <appender name="KAFKA_ACCESS_LOGS_SYNC" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <producerConfig>bootstrap.servers=${KAFKA_SERVERS}</producerConfig>
+        <producerConfig>acks=1</producerConfig>
+        <producerConfig>compression.type=lz4</producerConfig>
+
+        <!-- ✅ 토픽: access-logs-{서비스명} -->
+        <topic>access-logs-${SERVICE_NAME}</topic>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>
+                {
+                "application": "${APP_NAME}",
+                "service": "${SERVICE_NAME}",
+                "environment": "${ENVIRONMENT}"
                 }
             </customFields>
         </encoder>
 
-        <!-- ERROR 레벨만 필터링 -->
-        <filter class="ch.qos.logback.classic.filter.LevelFilter">
-            <level>ERROR</level>
+        <!-- ✅ ACCESS 마커만 -->
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator class="ch.qos.logback.classic.boolex.OnMarkerEvaluator">
+                <marker>ACCESS</marker>
+            </evaluator>
             <onMatch>ACCEPT</onMatch>
             <onMismatch>DENY</onMismatch>
         </filter>
     </appender>
 
-    <!-- ===== Root Logger 설정 ===== -->
-    <root level="INFO">
-        <!-- 콘솔 출력 (개발 시 확인용) -->
-        <appender-ref ref="CONSOLE" />
+    <!-- ===== 4. 감사 로그 (통합!) ===== -->
+    <appender name="KAFKA_AUDIT_LOGS_SYNC" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <producerConfig>bootstrap.servers=${KAFKA_SERVERS}</producerConfig>
+        <producerConfig>acks=all</producerConfig>
+        <producerConfig>enable.idempotence=true</producerConfig>  <!-- ✅ 중복 방지 -->
 
-        <!-- Kafka로 전송 (ELK 스택으로) -->
-        <appender-ref ref="KAFKA_APPENDER" />
-        <appender-ref ref="KAFKA_ERROR_APPENDER" />
+        <!-- ✅ 토픽: audit-logs (모든 서비스 통합!) -->
+        <topic>audit-logs</topic>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>
+                {
+                "application": "${APP_NAME}",
+                "service": "${SERVICE_NAME}",
+                "environment": "${ENVIRONMENT}",
+                "compliance": "required",
+                "retention": "7years"
+                }
+            </customFields>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>action</includeMdcKeyName>
+            <includeMdcKeyName>resource</includeMdcKeyName>
+        </encoder>
+
+        <!-- ✅ AUDIT 마커만 -->
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator class="ch.qos.logback.classic.boolex.OnMarkerEvaluator">
+                <marker>AUDIT</marker>
+            </evaluator>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+    </appender>
+
+    <!-- ===== 5. 보안 로그 (통합!) ===== -->
+    <appender name="KAFKA_SECURITY_LOGS_SYNC" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <producerConfig>bootstrap.servers=${KAFKA_SERVERS}</producerConfig>
+        <producerConfig>acks=all</producerConfig>
+
+        <!-- ✅ 토픽: security-logs (모든 서비스 통합!) -->
+        <topic>security-logs</topic>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>
+                {
+                "application": "${APP_NAME}",
+                "service": "${SERVICE_NAME}",
+                "environment": "${ENVIRONMENT}",
+                "severity": "critical"
+                }
+            </customFields>
+        </encoder>
+
+        <!-- ✅ SECURITY 마커만 -->
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator class="ch.qos.logback.classic.boolex.OnMarkerEvaluator">
+                <marker>SECURITY</marker>
+            </evaluator>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+    </appender>
+
+    <!-- ===== 6. 비즈니스 이벤트 ===== -->
+    <appender name="KAFKA_BUSINESS_EVENTS_SYNC" class="com.github.danielwegener.logback.kafka.KafkaAppender">
+        <producerConfig>bootstrap.servers=${KAFKA_SERVERS}</producerConfig>
+        <producerConfig>acks=all</producerConfig>
+
+        <!-- ✅ 토픽: business-events-{서비스명} -->
+        <topic>business-events-${SERVICE_NAME}</topic>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>
+                {
+                "application": "${APP_NAME}",
+                "service": "${SERVICE_NAME}",
+                "environment": "${ENVIRONMENT}"
+                }
+            </customFields>
+        </encoder>
+
+        <!-- ✅ BUSINESS 마커만 -->
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator class="ch.qos.logback.classic.boolex.OnMarkerEvaluator">
+                <marker>BUSINESS</marker>
+            </evaluator>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+    </appender>
+
+    <!-- ===================================================================
+         비동기 Appenders (성능 최적화)
+         ================================================================ -->
+
+    <appender name="KAFKA_APP_LOGS" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="KAFKA_APP_LOGS_SYNC" />
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+    </appender>
+
+    <appender name="KAFKA_ERROR_LOGS" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="KAFKA_ERROR_LOGS_SYNC" />
+        <queueSize>256</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+    </appender>
+
+    <appender name="KAFKA_ACCESS_LOGS" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="KAFKA_ACCESS_LOGS_SYNC" />
+        <queueSize>1024</queueSize>
+        <discardingThreshold>20</discardingThreshold>
+        <neverBlock>true</neverBlock>
+    </appender>
+
+    <appender name="KAFKA_AUDIT_LOGS" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="KAFKA_AUDIT_LOGS_SYNC" />
+        <queueSize>256</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+    </appender>
+
+    <appender name="KAFKA_SECURITY_LOGS" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="KAFKA_SECURITY_LOGS_SYNC" />
+        <queueSize>256</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+    </appender>
+
+    <appender name="KAFKA_BUSINESS_EVENTS" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="KAFKA_BUSINESS_EVENTS_SYNC" />
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+    </appender>
+
+    <!-- ===================================================================
+         Root Logger
+         ================================================================ -->
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="KAFKA_APP_LOGS" />
+        <appender-ref ref="KAFKA_ERROR_LOGS" />
+        <appender-ref ref="KAFKA_ACCESS_LOGS" />
+        <appender-ref ref="KAFKA_AUDIT_LOGS" />
+        <appender-ref ref="KAFKA_SECURITY_LOGS" />
+        <appender-ref ref="KAFKA_BUSINESS_EVENTS" />
     </root>
 
     <!-- ===== 패키지별 로그 레벨 ===== -->
     <logger name="com.example.kafka" level="DEBUG" />
-    <logger name="org.springframework.kafka" level="WARN" />
     <logger name="org.apache.kafka" level="WARN" />
+    <logger name="org.springframework.kafka" level="WARN" />
 </configuration>
