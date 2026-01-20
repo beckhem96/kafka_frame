@@ -1,8 +1,9 @@
 package com.example.kafka.controller;
 
+import com.example.kafka.constants.LogMarkers;
 import com.example.kafka.dto.OrderRequest;
 import com.example.kafka.service.OrderService;
-import com.example.kafka.constants.LogMarkers;
+import com.example.kafka.service.PayService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -19,16 +20,17 @@ import java.util.UUID;
 * 접근 로그(ACCESS) 예시*/
 @Slf4j
 @RestController
-@RequestMapping("/api/orders")
+@RequestMapping("/api/pay")
 @RequiredArgsConstructor
-public class OrderController {
+public class PayController {
 
     private final OrderService orderService;
+    private final PayService payService;
 
     /**
-     * 주문 생성 API
+     * 결제 생성 API
      *
-     * POST /api/orders
+     * POST /api/pay
      */
     @PostMapping
     public ResponseEntity<Map<String, String>> createOrder(
@@ -42,22 +44,20 @@ public class OrderController {
             // MDC 설정
             MDC.put("requestId", requestId);
             MDC.put("userId", userId != null ? userId : "anonymous");
-            MDC.put("endpoint", "POST /api/orders");
+            MDC.put("endpoint", "POST /api/pay");
 
             // ===== 접근 로그 (ACCESS 마커) =====
             // → access-logs-order-service 토픽
             log.info(LogMarkers.ACCESS,
-                    "Received order creation request from user: {}, product: {}",
-                    userId, request.getProductId());
-            log.info(LogMarkers.ORDER,
-                    "Received order creation request from user: {}, product: {}",
+                    "Received pay creation request from user: {}, product: {}",
                     userId, request.getProductId());
 
             // 비즈니스 로직 호출
-            String orderId = orderService.createOrder(
+            String orderId = payService.createPay(
                     userId,
                     request.getProductId(),
-                    request.getAmount()
+                    request.getAmount(),
+                    10000.0
             );
 
             long duration = System.currentTimeMillis() - startTime;
@@ -65,8 +65,8 @@ public class OrderController {
             // ===== 성공 접근 로그 =====
             MDC.put("statusCode", "200");
             MDC.put("duration", String.valueOf(duration));
-            log.info(LogMarkers.ORDER,
-                    "Order creation request completed: orderId={}, duration={}ms",
+            log.info(LogMarkers.ACCESS,
+                    "Pay creation request completed: orderId={}, duration={}ms",
                     orderId, duration);
 
             Map<String, String> response = new HashMap<>();
@@ -82,7 +82,7 @@ public class OrderController {
             MDC.put("statusCode", "500");
             MDC.put("duration", String.valueOf(duration));
             log.error(LogMarkers.ACCESS,
-                    "Order creation request failed: duration={}ms",
+                    "Pay creation request failed: duration={}ms",
                     duration, e);
 
             return ResponseEntity.internalServerError()
@@ -94,9 +94,9 @@ public class OrderController {
     }
 
     /**
-     * 주문 취소 API
+     * 결제 취소 API
      *
-     * DELETE /api/orders/{orderId}
+     * DELETE /api/pay/{orderId}
      */
     @DeleteMapping("/{orderId}")
     public ResponseEntity<Map<String, String>> cancelOrder(
@@ -107,13 +107,13 @@ public class OrderController {
         try {
             MDC.put("userId", userId);
             MDC.put("orderId", orderId);
-            MDC.put("endpoint", "DELETE /api/orders/{orderId}");
+            MDC.put("endpoint", "DELETE /api/pay/{orderId}");
 
-            log.info(LogMarkers.ORDER,
-                    "Received order cancellation request: orderId={}, reason={}",
+            log.info(LogMarkers.PAYMENT,
+                    "Received pay cancellation request: orderId={}, reason={}",
                     orderId, reason);
 
-            orderService.cancelOrder(orderId, userId, reason);
+            payService.cancelPay(orderId, userId, reason);
 
             return ResponseEntity.ok(Map.of("status", "cancelled"));
 
@@ -125,15 +125,15 @@ public class OrderController {
     /**
      * 에러 발생 API
      *
-     * GET /api/orders/error
+     * GET /api/pay/error
      */
     @GetMapping("/error")
-    public ResponseEntity<Map<String, String>> errorOrder() {
+    public ResponseEntity<Map<String, String>> errorPay() {
 
         try {
             MDC.put("userId", "test");
             MDC.put("orderId", "1");
-            MDC.put("endpoint", "GET /api/orders/error");
+            MDC.put("endpoint", "GET /api/pay/error");
 
             log.error("test용 에러입니다만");
 

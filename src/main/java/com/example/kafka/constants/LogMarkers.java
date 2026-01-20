@@ -43,6 +43,18 @@ public class LogMarkers {
      */
     public static final Marker METRIC = MarkerFactory.getMarker("METRIC");
 
+    /**
+     * 주문 도메인
+     * 토픽: app-logs-order
+     */
+    public static final Marker ORDER = MarkerFactory.getMarker("ORDER");
+
+    /**
+     * 결제 도메인
+     * 토픽: app-logs-payment
+     */
+    public static final Marker PAYMENT = MarkerFactory.getMarker("PAYMENT");
+
     private LogMarkers() {
         // 인스턴스 생성 방지
     }
